@@ -61,8 +61,9 @@ moving projects between computers, update `backgroundPath` in the JSON to the ne
 path, or a relative path beside the project. Missing or invalid backgrounds produce
 an explicit error and leave the currently open plan unchanged.
 
-The white control panel remains 575 pixels wide when the window is resized;
-all additional width goes to the drawing. Its controls scroll vertically if needed,
+The white control panel fits the Zoom control with approximately twice its left
+margin beyond its right edge, and stays fixed when the window is resized.
+All additional width goes to the drawing. Its controls scroll vertically if needed,
 while Quit stays at the bottom. The drawing starts empty; the illustration is a layout guide, not
 preloaded project content.
 
