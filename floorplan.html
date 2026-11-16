@@ -17,6 +17,7 @@
     button:hover { background: #f0f6ff; }
     button:focus-visible, input:focus-visible { outline: 3px solid #4487f8; outline-offset: 3px; }
     button:disabled { opacity: .45; cursor: wait; }
+    #delete-space:disabled { cursor: default; background: white; }
     .buttons { display: flex; align-items: flex-start; flex-direction: column; gap: 14px; }
     #new-space { margin-top: 21px; }
     .toggles { display: grid; gap: 10px; margin: 30px 0 22px; }
@@ -58,6 +59,7 @@
       <button id="load-project">Load Project</button>
       <button id="set-scale">Set Scale...</button>
       <button id="new-space">New Space</button>
+      <button id="delete-space" disabled>Delete Space</button>
     </div>
     <div class="toggles">
       <label><input id="grid" type="checkbox" checked> Grid</label>
@@ -255,20 +257,25 @@
       event.preventDefault();
       closeQuit("cancel");
     });
+    function syncButtons() {
+      document.querySelectorAll("aside button").forEach(button => {
+        button.disabled = busy || stopped || (button.id === "delete-space" && !state.spaces[state.selected]);
+      });
+    }
     function action(id, callback) {
       $(id).addEventListener("click", async () => {
         if (busy || stopped) return;
         cancelDrag();
         setMode(null);
         busy = true;
-        document.querySelectorAll("aside button").forEach(button => button.disabled = true);
+        syncButtons();
         try {
           await callback();
         } catch (error) {
           status(error.message, true);
         } finally {
           busy = false;
-          document.querySelectorAll("aside button").forEach(button => button.disabled = stopped);
+          syncButtons();
           if (stopped) document.querySelectorAll("aside input").forEach(input => input.disabled = true);
         }
       });
@@ -389,6 +396,15 @@
       if (value === null) return;
       setMode({type: "scale", feet: Number(value)});
       status(`Drag a horizontal or vertical line measuring ${value} ft. Escape cancels.`);
+    });
+    action("delete-space", () => {
+      const selected = state.spaces[state.selected];
+      if (!selected) throw new Error("Select a space before deleting it.");
+      state.spaces.splice(state.selected, 1);
+      state.selected = -1;
+      changed();
+      render();
+      status(`Deleted space "${selected.name}".`);
     });
     action("new-space", async () => {
       if (state.spaces.length >= 2000) throw new Error("A project can contain at most 2000 spaces.");
@@ -516,6 +532,7 @@
       $("rooms").replaceChildren(rooms);
       $("handles").replaceChildren();
       const selected = state.spaces[state.selected];
+      syncButtons();
       if (selected) {
         for (const handle of handlePositions(selected)) {
           $("handles").append(element("rect", {

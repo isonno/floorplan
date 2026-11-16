@@ -53,3 +53,8 @@ The controls on the left are as follows:
 Overall this looks good. I see two issues: First, there needs to be a "Quit" button, at the bottom of the left panel, to exit the application. If the current floorplan has unsaved changes, it should offer to save them.
 
 Second, if I resize the web page to make it wider, the width of the left panel should be fixed at around 575 pixels (the size in the mockup). The left panel width should not change if the width of the web page changes. Any additional space should be given to the floorplan content.
+
+----
+One more change: Add a line under the "Zoom" control that lists the "Total square feet: " and adds up the square footage of all spaces.
+----
+Below the "New Space" button, add a "Delete Space" button. This deletes the active space (with drag controls visible) from the floorplan. If no space is active (no drag controls) then this control is disabled and grayed out.
