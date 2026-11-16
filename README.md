@@ -43,6 +43,8 @@ automatically; `--port 8000` selects a specific port.
   also appear. **Background** toggles the loaded image. Zoom affects every layer.
   Use the workspace scroll bars or a trackpad to pan. Escape cancels drawing or
   restores a room to its state before the current drag.
+- **Total square feet**, below Zoom, sums the areas of all spaces and updates
+  as they change. Overlapping spaces each contribute their full area.
 - **Save Project / Load Project:** enter a local JSON pathname. Saving confirms
   before replacing a file and writes atomically. The containing folder must
   already exist. Rooms, colors, background pathname, scale, zoom, layer visibility,
