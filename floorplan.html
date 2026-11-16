@@ -1,0 +1,722 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Floorplan - space planner</title>
+  <style>
+    :root { font-family: Arial, Helvetica, sans-serif; color: #202020; background: white; }
+    * { box-sizing: border-box; }
+    body { margin: 0; height: 100vh; display: flex; overflow: hidden; }
+    aside { flex: 0 0 575px; width: 575px; min-width: 575px; padding: 28px 30px; display: flex; flex-direction: column; background: white; border-right: 1px solid #e8e8e8; }
+    .panel-content { flex: 1; min-height: 0; overflow-y: auto; }
+    .quit-row { flex-shrink: 0; padding-top: 20px; }
+    h1 { font-size: 23px; font-weight: 500; margin: 0 0 6px; }
+    .subtitle { color: #666; font-size: 14px; margin: 0 0 28px; }
+    button { font: inherit; border: 1.5px solid #222; border-radius: 20px; background: white; padding: 7px 17px; color: #161616; cursor: pointer; }
+    button:hover { background: #f0f6ff; }
+    button:focus-visible, input:focus-visible { outline: 3px solid #4487f8; outline-offset: 3px; }
+    button:disabled { opacity: .45; cursor: wait; }
+    .buttons { display: flex; align-items: flex-start; flex-direction: column; gap: 14px; }
+    #new-space { margin-top: 21px; }
+    .toggles { display: grid; gap: 10px; margin: 30px 0 22px; }
+    .toggles label { display: flex; align-items: center; gap: 7px; width: fit-content; cursor: pointer; }
+    input[type=checkbox] { width: 17px; height: 17px; margin: 0; accent-color: #222; }
+    .disabled { color: #999; }
+    .zoom { width: 240px; text-align: center; max-width: 100%; }
+    .zoom label { display: block; margin-bottom: 5px; }
+    input[type=range] { width: 100%; accent-color: #222; cursor: pointer; }
+    #zoom-value { display: block; font-size: 14px; margin-top: 3px; }
+    .info { margin-top: 30px; padding-top: 18px; border-top: 1px solid #eee; font-size: 13px; line-height: 1.6; max-width: 390px; color: #666; }
+    .info p { margin: 0 0 12px; }
+    #status { color: #343434; overflow-wrap: anywhere; }
+    #status.error { color: #b31b1b; }
+    #selection { color: #333; }
+    #viewport { flex: 1; min-width: 0; height: 100%; overflow: auto; position: relative; background: white; overscroll-behavior: contain; }
+    #drawing { display: block; touch-action: none; user-select: none; }
+    #drawing.drawing-mode { cursor: crosshair !important; }
+    #drawing text { pointer-events: none; }
+    #stopped-message { padding: 40px; line-height: 1.6; }
+    #tooltip { position: fixed; pointer-events: none; background: #222; color: white; padding: 7px 10px; border-radius: 5px; font-size: 13px; z-index: 3; white-space: nowrap; }
+    dialog { border: 1px solid #bbb; border-radius: 12px; padding: 25px; width: min(520px, calc(100vw - 32px)); box-shadow: 0 12px 70px #0003; }
+    dialog::backdrop { background: #0003; }
+    dialog h2 { font-size: 20px; margin: 0 0 15px; }
+    dialog label { display: block; margin-bottom: 7px; line-height: 1.5; }
+    dialog input { width: 100%; font: inherit; padding: 10px; border: 1px solid #999; border-radius: 5px; }
+    dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
+    #dialog-help { font-size: 13px; color: #666; line-height: 1.5; }
+  </style>
+</head>
+<body>
+  <aside aria-label="Floor plan controls">
+    <div class="panel-content">
+    <h1>Floorplan</h1>
+    <p class="subtitle">A little room to plan.</p>
+    <div class="buttons">
+      <button id="load-background">Load Background</button>
+      <button id="save-project">Save Project</button>
+      <button id="load-project">Load Project</button>
+      <button id="set-scale">Set Scale...</button>
+      <button id="new-space">New Space</button>
+    </div>
+    <div class="toggles">
+      <label><input id="grid" type="checkbox" checked> Grid</label>
+      <label id="background-label" class="disabled"><input id="background" type="checkbox" disabled> Background</label>
+    </div>
+    <div class="zoom">
+      <label for="zoom">Zoom</label>
+      <input id="zoom" type="range" min="50" max="200" value="100" step="1">
+      <output id="zoom-value" for="zoom">100%</output>
+    </div>
+    <div class="info">
+      <p id="status" role="status" aria-live="polite">Load a background or draw your first space.</p>
+      <p id="scale-info"></p>
+      <p id="selection"></p>
+      <p>Drag inside a space to move it. Drag a side midpoint to resize. Drag a corner to change proportions while keeping its area.</p>
+      <p>All edges snap to 0.5 ft. Area-preserving corners jump between valid half-foot dimensions; some areas have few possible proportions.</p>
+      <p>Use Set Scale to trace a known horizontal or vertical distance. Press Escape to cancel an action. Scroll to move around the plan.</p>
+    </div>
+    </div>
+    <div class="quit-row"><button id="quit">Quit</button></div>
+  </aside>
+  <main id="viewport" tabindex="0" aria-label="Scrollable floor plan workspace">
+    <svg id="drawing" xmlns="http://www.w3.org/2000/svg" aria-label="Floor plan drawing">
+      <defs>
+        <pattern id="whole-grid" patternUnits="userSpaceOnUse"><path fill="none" stroke="#c8ddff" stroke-width="0.7"/></pattern>
+        <pattern id="half-grid" patternUnits="userSpaceOnUse"><path fill="none" stroke="#bcd5fa" stroke-width="0.6" stroke-dasharray="1.5 3"/></pattern>
+      </defs>
+      <image id="background-image" opacity="0.25" x="0" y="0"/>
+      <rect id="grid-whole" fill="url(#whole-grid)" pointer-events="none"/>
+      <rect id="grid-half" fill="url(#half-grid)" pointer-events="none"/>
+      <g id="rooms"></g>
+      <g id="handles" pointer-events="none"></g>
+      <g id="preview" pointer-events="none"></g>
+    </svg>
+    <div id="stopped-message" hidden>
+      <h2>Application stopped</h2>
+      <p>You can close this browser tab. Run the Python script again to start a new session.</p>
+    </div>
+  </main>
+  <div id="tooltip" hidden></div>
+  <dialog id="input-dialog">
+    <form id="input-form">
+      <h2 id="dialog-title"></h2>
+      <label id="dialog-label" for="dialog-input"></label>
+      <input id="dialog-input" required autocomplete="off">
+      <p id="dialog-help"></p>
+      <div class="actions">
+        <button id="dialog-cancel" type="button">Cancel</button>
+        <button id="dialog-accept" type="submit">Continue</button>
+      </div>
+    </form>
+  </dialog>
+  <dialog id="quit-dialog" aria-labelledby="quit-title">
+    <form id="quit-form">
+      <h2 id="quit-title">Save changes before quitting?</h2>
+      <p>Your floor plan has unsaved changes.</p>
+      <div class="actions">
+        <button value="cancel">Cancel</button>
+        <button value="discard">Don't Save</button>
+        <button value="save" autofocus>Save</button>
+      </div>
+    </form>
+  </dialog>
+  <script nonce="__SESSION_TOKEN__">
+    "use strict";
+    const TOKEN = "__SESSION_TOKEN__";
+    const $ = id => document.getElementById(id);
+    const svgNS = "http://www.w3.org/2000/svg";
+    const viewport = $("viewport");
+    const drawing = $("drawing");
+    const palette = ["#14e000", "#2878ff", "#ffae00", "#f32639", "#00cdda", "#e32fe9", "#8d46f5", "#e9d500"];
+    const state = {
+      spaces: [], pixelsPerFoot: 20, zoom: 1, showGrid: true, showBackground: false,
+      backgroundPath: null, background: null, projectPath: "",
+      selected: -1, dirty: false
+    };
+    let mode = null;
+    let drag = null;
+    let busy = false;
+    let stopped = false;
+    let pendingInput = null;
+    let pendingQuit = null;
+    let lastScroll = {x: 0, y: 0};
+
+    function element(tag, attributes = {}, text = null) {
+      const node = document.createElementNS(svgNS, tag);
+      for (const [key, value] of Object.entries(attributes)) node.setAttribute(key, value);
+      if (text !== null) node.textContent = text;
+      return node;
+    }
+    function attributes(node, values) {
+      for (const [key, value] of Object.entries(values)) node.setAttribute(key, value);
+    }
+    const snap = value => Math.round(value * 2) / 2;
+    const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+    const format = value => Number(value.toFixed(2)).toString();
+    const dimensions = room => `${format(room.width)} x ${format(room.height)} ft`;
+    function status(message, error = false) {
+      $("status").textContent = message;
+      $("status").classList.toggle("error", error);
+    }
+    function changed() {
+      if (stopped) return;
+      state.dirty = true;
+      document.title = "Floorplan - unsaved changes";
+    }
+    function setMode(next) {
+      mode = next;
+      drawing.classList.toggle("drawing-mode", Boolean(mode));
+      drawing.style.cursor = "default";
+      $("preview").replaceChildren();
+    }
+    function project() {
+      return {
+        version: 1,
+        spaces: state.spaces.map(room => ({...room})),
+        backgroundPath: state.backgroundPath,
+        pixelsPerFoot: state.pixelsPerFoot,
+        view: {
+          zoom: state.zoom, scrollX: viewport.scrollLeft, scrollY: viewport.scrollTop,
+          showGrid: state.showGrid, showBackground: state.showBackground
+        }
+      };
+    }
+    async function api(route, value) {
+      const response = await fetch(route, {
+        method: "POST",
+        headers: {"Content-Type": "application/json", "X-Floorplan-Token": TOKEN},
+        body: JSON.stringify(value)
+      });
+      const result = await response.json();
+      if (!response.ok) {
+        const error = new Error(result.error || `Server error (${response.status}).`);
+        error.status = response.status;
+        throw error;
+      }
+      return result;
+    }
+    function ask({title, label, value = "", help = "", numeric = false, accept = "Continue"}) {
+      return new Promise(resolve => {
+        pendingInput = resolve;
+        $("dialog-title").textContent = title;
+        $("dialog-label").textContent = label;
+        $("dialog-help").textContent = help;
+        $("dialog-input").type = numeric ? "number" : "text";
+        $("dialog-input").maxLength = title === "New Space" ? 120 : 4096;
+        if (numeric) {
+          $("dialog-input").min = "0.001";
+          $("dialog-input").max = "10000";
+          $("dialog-input").step = "any";
+        } else {
+          $("dialog-input").removeAttribute("min");
+          $("dialog-input").removeAttribute("max");
+        }
+        $("dialog-input").value = value;
+        $("dialog-input").setCustomValidity("");
+        $("dialog-accept").textContent = accept;
+        $("input-dialog").showModal();
+        $("dialog-input").focus();
+        $("dialog-input").select();
+      });
+    }
+    function closeInput(value) {
+      $("input-dialog").close();
+      const resolve = pendingInput;
+      pendingInput = null;
+      if (resolve) resolve(value);
+    }
+    $("input-form").addEventListener("submit", event => {
+      event.preventDefault();
+      const value = $("dialog-input").value.trim();
+      if (!value) {
+        $("dialog-input").setCustomValidity("Please enter a value.");
+        $("dialog-input").reportValidity();
+      } else closeInput(value);
+    });
+    $("dialog-input").addEventListener("input", () => $("dialog-input").setCustomValidity(""));
+    $("dialog-cancel").addEventListener("click", () => closeInput(null));
+    $("input-dialog").addEventListener("cancel", event => {
+      event.preventDefault();
+      closeInput(null);
+    });
+    function closeQuit(choice) {
+      $("quit-dialog").close();
+      const resolve = pendingQuit;
+      pendingQuit = null;
+      if (resolve) resolve(choice);
+    }
+    $("quit-form").addEventListener("submit", event => {
+      event.preventDefault();
+      closeQuit(event.submitter ? event.submitter.value : "cancel");
+    });
+    $("quit-dialog").addEventListener("cancel", event => {
+      event.preventDefault();
+      closeQuit("cancel");
+    });
+    function action(id, callback) {
+      $(id).addEventListener("click", async () => {
+        if (busy || stopped) return;
+        cancelDrag();
+        setMode(null);
+        busy = true;
+        document.querySelectorAll("aside button").forEach(button => button.disabled = true);
+        try {
+          await callback();
+        } catch (error) {
+          status(error.message, true);
+        } finally {
+          busy = false;
+          document.querySelectorAll("aside button").forEach(button => button.disabled = stopped);
+          if (stopped) document.querySelectorAll("aside input").forEach(input => input.disabled = true);
+        }
+      });
+    }
+    async function backgroundImage(info) {
+      if (!info) return null;
+      const image = new Image();
+      image.src = info.url;
+      try {
+        await image.decode();
+      } catch {
+        throw new Error("The background could not be decoded. Choose a valid PNG, JPEG, GIF, WebP, or BMP image.");
+      }
+      return {url: info.url, width: image.naturalWidth, height: image.naturalHeight};
+    }
+    function syncControls() {
+      $("grid").checked = state.showGrid;
+      $("background").checked = state.showBackground;
+      $("background").disabled = !state.background;
+      $("background-label").classList.toggle("disabled", !state.background);
+      $("zoom").value = Math.round(state.zoom * 100);
+      $("zoom-value").textContent = `${Math.round(state.zoom * 100)}%`;
+    }
+    action("load-background", async () => {
+      const path = await ask({
+        title: "Load Background", label: "Local image pathname",
+        value: state.backgroundPath || "",
+        help: "PNG, JPEG, GIF, WebP, or BMP, up to 50 MB. Relative paths start in the application folder. The image is displayed at 25% opacity."
+      });
+      if (path === null) return;
+      const info = await api("/api/background", {path});
+      const background = await backgroundImage(info);
+      state.backgroundPath = info.path;
+      state.background = background;
+      state.showBackground = true;
+      changed();
+      syncControls();
+      render();
+      status("Background loaded. Use Set Scale to trace a known distance.");
+    });
+    async function saveProject() {
+      const path = await ask({
+        title: "Save Project", label: "Project pathname (.json)",
+        value: state.projectPath || "floorplan-project.json",
+        help: "Relative paths start in the application folder. The parent folder must already exist.",
+        accept: "Save"
+      });
+      if (path === null) return false;
+      const snapshot = project();
+      let result;
+      try {
+        result = await api("/api/save", {path, project: snapshot});
+      } catch (error) {
+        if (error.status !== 409) throw error;
+        if (!confirm(`Replace the existing file?\n${path}`)) return false;
+        result = await api("/api/save", {path, project: snapshot, overwrite: true});
+      }
+      state.projectPath = result.path;
+      state.dirty = JSON.stringify(project()) !== JSON.stringify(snapshot);
+      document.title = state.dirty ? "Floorplan - unsaved changes" : "Floorplan - space planner";
+      status(`Saved: ${result.path}`);
+      return true;
+    }
+    action("save-project", saveProject);
+    action("quit", async () => {
+      if (state.dirty) {
+        const choice = await new Promise(resolve => {
+          pendingQuit = resolve;
+          $("quit-dialog").showModal();
+        });
+        if (choice === "cancel") return;
+        if (choice === "save") {
+          if (!await saveProject()) return;
+          if (state.dirty) throw new Error("The plan changed while saving. Save again before quitting.");
+        }
+      }
+      await api("/api/quit", {});
+      stopped = true;
+      state.dirty = false;
+      document.title = "Floorplan - stopped";
+      drawing.style.display = "none";
+      $("stopped-message").hidden = false;
+      viewport.scrollTo(0, 0);
+      status("Application stopped. You can close this browser tab.");
+      if (window.opener) window.close();
+    });
+    action("load-project", async () => {
+      if (state.dirty && !confirm("Discard unsaved changes and load a project?")) return;
+      const path = await ask({
+        title: "Load Project", label: "Project pathname (.json)",
+        value: state.projectPath, help: "Relative background paths in a project are resolved beside that project file.",
+        accept: "Load"
+      });
+      if (path === null) return;
+      const result = await api("/api/load", {path});
+      const background = await backgroundImage(result.background);
+      const saved = result.project;
+      Object.assign(state, {
+        spaces: saved.spaces, pixelsPerFoot: saved.pixelsPerFoot,
+        backgroundPath: saved.backgroundPath, background, projectPath: result.path,
+        zoom: saved.view.zoom, showGrid: saved.view.showGrid,
+        showBackground: Boolean(background) && saved.view.showBackground,
+        selected: -1, dirty: false
+      });
+      syncControls();
+      render({scrollX: saved.view.scrollX, scrollY: saved.view.scrollY});
+      viewport.scrollLeft = saved.view.scrollX;
+      viewport.scrollTop = saved.view.scrollY;
+      lastScroll = {x: viewport.scrollLeft, y: viewport.scrollTop};
+      document.title = "Floorplan - space planner";
+      status(`Loaded: ${result.path}`);
+    });
+    action("set-scale", async () => {
+      const value = await ask({
+        title: "Set Scale", label: "Known distance in feet", value: "16", numeric: true,
+        help: "Then drag across that distance. The measuring line locks horizontally or vertically."
+      });
+      if (value === null) return;
+      setMode({type: "scale", feet: Number(value)});
+      status(`Drag a horizontal or vertical line measuring ${value} ft. Escape cancels.`);
+    });
+    action("new-space", async () => {
+      if (state.spaces.length >= 2000) throw new Error("A project can contain at most 2000 spaces.");
+      const name = await ask({title: "New Space", label: "Space name", help: "Use a name such as MasterBR.bath for a darker related color."});
+      if (name === null) return;
+      setMode({type: "new", name});
+      status(`Drag opposite corners to create "${name}". Escape cancels.`);
+    });
+    $("grid").addEventListener("change", event => {
+      state.showGrid = event.target.checked;
+      changed();
+      render();
+    });
+    $("background").addEventListener("change", event => {
+      state.showBackground = event.target.checked;
+      changed();
+      render();
+    });
+    $("zoom").addEventListener("input", event => {
+      const previous = state.zoom;
+      const centerX = (viewport.scrollLeft + viewport.clientWidth / 2) / previous;
+      const centerY = (viewport.scrollTop + viewport.clientHeight / 2) / previous;
+      state.zoom = Number(event.target.value) / 100;
+      changed();
+      syncControls();
+      render();
+      viewport.scrollLeft = centerX * state.zoom - viewport.clientWidth / 2;
+      viewport.scrollTop = centerY * state.zoom - viewport.clientHeight / 2;
+    });
+    viewport.addEventListener("scroll", () => {
+      const x = viewport.scrollLeft, y = viewport.scrollTop;
+      if (!busy && (x !== lastScroll.x || y !== lastScroll.y)) changed();
+      lastScroll = {x, y};
+    });
+
+    function darker(color) {
+      return "#" + [1, 3, 5].map(offset =>
+        Math.round(parseInt(color.slice(offset, offset + 2), 16) * 0.58).toString(16).padStart(2, "0")
+      ).join("");
+    }
+    function colorFor(name) {
+      const root = name.split(".")[0];
+      const related = state.spaces.find(room => room.name.split(".")[0] === root);
+      let base;
+      if (related) {
+        const parent = state.spaces.find(room => room.name === root);
+        if (name.includes(".") && !parent) return related.color;
+        if (!name.includes(".") && !parent) {
+          base = "#" + [1, 3, 5].map(offset =>
+            Math.min(255, Math.round(parseInt(related.color.slice(offset, offset + 2), 16) / 0.58))
+              .toString(16).padStart(2, "0")
+          ).join("");
+        } else base = parent.color;
+      } else {
+        const families = new Set(state.spaces.map(room => room.name.split(".")[0]));
+        if (families.size < palette.length) base = palette[families.size];
+        else {
+          const hue = ((families.size - palette.length) * 137.508 + 25) % 360;
+          const sector = hue / 60;
+          const secondary = 1 - Math.abs(sector % 2 - 1);
+          const rgb = sector < 1 ? [1, secondary, 0] : sector < 2 ? [secondary, 1, 0] :
+            sector < 3 ? [0, 1, secondary] : sector < 4 ? [0, secondary, 1] :
+            sector < 5 ? [secondary, 0, 1] : [1, 0, secondary];
+          base = "#" + rgb.map(c => Math.round(c * 235).toString(16).padStart(2, "0")).join("");
+        }
+      }
+      return name.includes(".") ? darker(base) : base;
+    }
+    function roomRect(room, extra = {}) {
+      const p = state.pixelsPerFoot;
+      return element("rect", {
+        x: room.x * p, y: room.y * p, width: room.width * p, height: room.height * p,
+        rx: Math.min(28, room.width * p / 4, room.height * p / 4),
+        fill: "none", stroke: room.color, "stroke-width": 4.5, ...extra
+      });
+    }
+    function handlePositions(room) {
+      const x = room.x, y = room.y, r = x + room.width, b = y + room.height;
+      return [
+        {kind: "nw", x, y}, {kind: "ne", x: r, y}, {kind: "se", x: r, y: b}, {kind: "sw", x, y: b},
+        {kind: "n", x: (x + r) / 2, y}, {kind: "e", x: r, y: (y + b) / 2},
+        {kind: "s", x: (x + r) / 2, y: b}, {kind: "w", x, y: (y + b) / 2}
+      ];
+    }
+    function render(minimumView = null) {
+      const p = state.pixelsPerFoot;
+      let width = Math.max(1600, viewport.clientWidth / state.zoom, (state.background?.width || 0) + 60);
+      let height = Math.max(1200, viewport.clientHeight / state.zoom, (state.background?.height || 0) + 60);
+      for (const room of state.spaces) {
+        width = Math.max(width, (room.x + room.width) * p + 200);
+        height = Math.max(height, (room.y + room.height) * p + 200);
+      }
+      width = Math.max(width, ((minimumView?.scrollX ?? viewport.scrollLeft) + viewport.clientWidth) / state.zoom);
+      height = Math.max(height, ((minimumView?.scrollY ?? viewport.scrollTop) + viewport.clientHeight) / state.zoom);
+      attributes(drawing, {width: width * state.zoom, height: height * state.zoom, viewBox: `0 0 ${width} ${height}`});
+      const image = $("background-image");
+      if (state.background) {
+        attributes(image, {href: state.background.url, width: state.background.width, height: state.background.height});
+      } else image.removeAttribute("href");
+      image.style.display = state.background && state.showBackground ? "" : "none";
+      attributes($("whole-grid"), {width: p, height: p});
+      $("whole-grid").firstElementChild.setAttribute("d", `M ${p} 0 H 0 V ${p}`);
+      attributes($("half-grid"), {width: p, height: p});
+      $("half-grid").firstElementChild.setAttribute("d", `M ${p / 2} 0 V ${p} M 0 ${p / 2} H ${p}`);
+      for (const id of ["grid-whole", "grid-half"]) attributes($(id), {width, height});
+      $("grid-whole").style.display = state.showGrid ? "" : "none";
+      $("grid-half").style.display = state.showGrid && state.zoom > 1.5 ? "" : "none";
+      const rooms = document.createDocumentFragment();
+      state.spaces.forEach((room, index) => {
+        const group = element("g", {"data-room": index});
+        group.append(roomRect(room));
+        const cx = (room.x + room.width / 2) * p, cy = (room.y + room.height / 2) * p;
+        const title = element("title", {}, `${room.name}: ${dimensions(room)}, ${format(room.width * room.height)} sqft`);
+        const text = element("text", {
+          x: cx, y: cy - 8, "text-anchor": "middle", "font-size": 13, fill: "#111",
+          "paint-order": "stroke", stroke: "#ffffff", "stroke-width": 2, "stroke-opacity": 0.8
+        });
+        text.append(
+          element("tspan", {x: cx}, room.name),
+          element("tspan", {x: cx, dy: 28}, `${format(room.width * room.height)} sqft`)
+        );
+        group.append(title, text);
+        rooms.append(group);
+      });
+      $("rooms").replaceChildren(rooms);
+      $("handles").replaceChildren();
+      const selected = state.spaces[state.selected];
+      if (selected) {
+        for (const handle of handlePositions(selected)) {
+          $("handles").append(element("rect", {
+            x: handle.x * p - 4 / state.zoom, y: handle.y * p - 4 / state.zoom,
+            width: 8 / state.zoom, height: 8 / state.zoom,
+            fill: "white", stroke: selected.color, "stroke-width": 1.5 / state.zoom
+          }));
+        }
+      }
+      $("selection").textContent = selected ? `${selected.name}: ${dimensions(selected)} · ${format(selected.width * selected.height)} sqft` : "";
+      $("scale-info").textContent = `Scale: ${format(p)} image pixels / ft · ${state.spaces.length} space${state.spaces.length === 1 ? "" : "s"}`;
+    }
+    function point(event) {
+      const bounds = drawing.getBoundingClientRect();
+      return {
+        x: clamp((event.clientX - bounds.left) / state.zoom, 0, 10000 * state.pixelsPerFoot),
+        y: clamp((event.clientY - bounds.top) / state.zoom, 0, 10000 * state.pixelsPerFoot)
+      };
+    }
+    function hitTest(at) {
+      const p = state.pixelsPerFoot;
+      const tolerance = 10 / state.zoom;
+      const order = state.spaces.map((_, index) => index).reverse();
+      if (state.selected >= 0) {
+        order.splice(order.indexOf(state.selected), 1);
+        order.unshift(state.selected);
+      }
+      for (const index of order) {
+        const room = state.spaces[index];
+        const handle = handlePositions(room).find(h => Math.hypot(at.x - h.x * p, at.y - h.y * p) <= tolerance);
+        if (handle) return {index, kind: handle.kind};
+        if (at.x >= room.x * p && at.x <= (room.x + room.width) * p &&
+            at.y >= room.y * p && at.y <= (room.y + room.height) * p) return {index, kind: "move"};
+      }
+      return null;
+    }
+    function factors(room) {
+      const units = Math.round(room.width * 2) * Math.round(room.height * 2);
+      const pairs = [];
+      for (let i = 1; i * i <= units; i++) {
+        if (units % i === 0) {
+          pairs.push({width: i / 2, height: units / i / 2});
+          if (i * i !== units) pairs.push({width: units / i / 2, height: i / 2});
+        }
+      }
+      return pairs;
+    }
+    function constrainedLine(start, at) {
+      return Math.abs(at.x - start.x) >= Math.abs(at.y - start.y) ?
+        {x: at.x, y: start.y} : {x: start.x, y: at.y};
+    }
+    function newRectangle(start, end) {
+      const p = state.pixelsPerFoot;
+      const x1 = snap(start.x / p), y1 = snap(start.y / p), x2 = snap(end.x / p), y2 = snap(end.y / p);
+      return {x: Math.min(x1, x2), y: Math.min(y1, y2), width: Math.abs(x2 - x1), height: Math.abs(y2 - y1)};
+    }
+    function tooltip(event, text) {
+      $("tooltip").textContent = text;
+      $("tooltip").hidden = false;
+      const box = $("tooltip").getBoundingClientRect();
+      $("tooltip").style.left = `${clamp(event.clientX + 16, 5, innerWidth - box.width - 5)}px`;
+      $("tooltip").style.top = `${clamp(event.clientY + 18, 5, innerHeight - box.height - 5)}px`;
+    }
+    drawing.addEventListener("pointerdown", event => {
+      if (event.button !== 0 || busy || stopped || drag) return;
+      event.preventDefault();
+      const at = point(event);
+      if (mode) {
+        drag = {kind: mode.type, start: at, pointerId: event.pointerId};
+      } else {
+        const hit = hitTest(at);
+        state.selected = hit ? hit.index : -1;
+        render();
+        if (!hit) return;
+        const original = {...state.spaces[hit.index]};
+        drag = {...hit, start: at, original, pointerId: event.pointerId};
+        if (hit.kind.length === 2 && hit.kind !== "move") drag.pairs = factors(original);
+      }
+      drawing.setPointerCapture(event.pointerId);
+    });
+    drawing.addEventListener("pointermove", event => {
+      const at = point(event);
+      if (!drag) {
+        const hit = mode ? null : hitTest(at);
+        const cursors = {move: "move", n: "ns-resize", s: "ns-resize", w: "ew-resize", e: "ew-resize",
+          nw: "nwse-resize", se: "nwse-resize", ne: "nesw-resize", sw: "nesw-resize"};
+        drawing.style.cursor = hit ? cursors[hit.kind] : "default";
+        return;
+      }
+      if (event.pointerId !== drag.pointerId) return;
+      const preview = $("preview");
+      preview.replaceChildren();
+      if (drag.kind === "new") {
+        const room = newRectangle(drag.start, at);
+        preview.append(roomRect({...room, color: colorFor(mode.name)}, {"stroke-dasharray": "7 4"}));
+        tooltip(event, dimensions(room));
+        return;
+      }
+      if (drag.kind === "scale") {
+        const end = constrainedLine(drag.start, at);
+        preview.append(element("line", {
+          x1: drag.start.x, y1: drag.start.y, x2: end.x, y2: end.y,
+          stroke: "#161616", "stroke-width": 2 / state.zoom, "stroke-dasharray": "7 4"
+        }));
+        tooltip(event, `${mode.feet} ft`);
+        return;
+      }
+      const p = state.pixelsPerFoot, original = drag.original;
+      const room = state.spaces[drag.index];
+      const x = at.x / p, y = at.y / p;
+      const right = original.x + original.width, bottom = original.y + original.height;
+      if (drag.kind === "move") {
+        room.x = clamp(snap(original.x + (at.x - drag.start.x) / p), 0, 10000 - room.width);
+        room.y = clamp(snap(original.y + (at.y - drag.start.y) / p), 0, 10000 - room.height);
+      } else if (drag.pairs) {
+        const west = drag.kind.includes("w"), north = drag.kind.includes("n");
+        const anchorX = west ? right : original.x, anchorY = north ? bottom : original.y;
+        const wantedWidth = Math.max(0.5, west ? anchorX - x : x - anchorX);
+        const wantedHeight = Math.max(0.5, north ? anchorY - y : y - anchorY);
+        let best = null, distance = Infinity;
+        for (const pair of drag.pairs) {
+          const left = west ? anchorX - pair.width : anchorX;
+          const top = north ? anchorY - pair.height : anchorY;
+          if (left < 0 || top < 0 || left + pair.width > 10000 || top + pair.height > 10000) continue;
+          const score = (pair.width - wantedWidth) ** 2 + (pair.height - wantedHeight) ** 2;
+          if (score < distance) {
+            distance = score;
+            best = {...pair, x: left, y: top};
+          }
+        }
+        if (best) Object.assign(room, best);
+      } else {
+        if (drag.kind === "w") { room.x = clamp(snap(x), 0, right - 0.5); room.width = right - room.x; }
+        if (drag.kind === "e") room.width = clamp(snap(x) - original.x, 0.5, 10000 - original.x);
+        if (drag.kind === "n") { room.y = clamp(snap(y), 0, bottom - 0.5); room.height = bottom - room.y; }
+        if (drag.kind === "s") room.height = clamp(snap(y) - original.y, 0.5, 10000 - original.y);
+      }
+      render();
+      if (drag.kind !== "move") tooltip(event, dimensions(room));
+    });
+    function cancelDrag() {
+      if (drag) {
+        const pointerId = drag.pointerId;
+        if (drag.original) state.spaces[drag.index] = drag.original;
+        drag = null;
+        if (drawing.hasPointerCapture(pointerId)) drawing.releasePointerCapture(pointerId);
+        render();
+      }
+      $("preview").replaceChildren();
+      $("tooltip").hidden = true;
+    }
+    drawing.addEventListener("pointerup", event => {
+      if (!drag || event.pointerId !== drag.pointerId) return;
+      const at = point(event), finished = drag;
+      drag = null;
+      if (drawing.hasPointerCapture(event.pointerId)) drawing.releasePointerCapture(event.pointerId);
+      $("preview").replaceChildren();
+      $("tooltip").hidden = true;
+      if (finished.kind === "new") {
+        const room = newRectangle(finished.start, at);
+        if (room.width < 0.5 || room.height < 0.5) {
+          status("A space must be at least 0.5 x 0.5 ft. Drag again, or press Escape.", true);
+          return;
+        }
+        state.spaces.push({...room, name: mode.name, color: colorFor(mode.name)});
+        state.selected = state.spaces.length - 1;
+        setMode(null);
+        changed();
+        status("Space created. Drag it to move, or use its side and corner handles.");
+      } else if (finished.kind === "scale") {
+        const end = constrainedLine(finished.start, at);
+        const length = Math.hypot(end.x - finished.start.x, end.y - finished.start.y);
+        const scale = length / mode.feet;
+        if (length * state.zoom < 5 || scale < 0.05 || scale > 10000) {
+          status("Draw a line at least 5 screen pixels long, with a scale between 0.05 and 10,000 pixels/ft. Try again.", true);
+          return;
+        }
+        state.pixelsPerFoot = scale;
+        setMode(null);
+        changed();
+        status("Scale updated. Existing spaces keep their dimensions in feet.");
+      } else if (JSON.stringify(finished.original) !== JSON.stringify(state.spaces[finished.index])) {
+        changed();
+        status(finished.pairs ? "Proportions updated; area preserved exactly." : "Space updated.");
+      }
+      render();
+    });
+    drawing.addEventListener("pointercancel", cancelDrag);
+    drawing.addEventListener("lostpointercapture", () => { if (drag) cancelDrag(); });
+    document.addEventListener("keydown", event => {
+      if (event.key === "Escape" && !$("input-dialog").open) {
+        cancelDrag();
+        setMode(null);
+        status("Action canceled.");
+      }
+    });
+    window.addEventListener("beforeunload", event => {
+      if (state.dirty) { event.preventDefault(); event.returnValue = ""; }
+    });
+    new ResizeObserver(() => render()).observe(viewport);
+    syncControls();
+    render();
+  </script>
+</body>
+</html>
