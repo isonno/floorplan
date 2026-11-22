@@ -35,11 +35,11 @@ automatically; `--port 8000` selects a specific port.
 - **Delete Space:** removes the selected space (the one showing drag handles).
   It is disabled when no space is selected. The total area updates immediately.
 - Drag inside a space to move it. Selecting a space reveals eight handles.
-  Side midpoint handles change its area; corner handles preserve its area
-  exactly and keep the opposite corner fixed.
-- Exact area plus half-foot dimensions permits only discrete proportions.
-  Corner resizing chooses the valid width/height pair nearest the cursor,
-  so it can jump substantially, especially for areas with few factors.
+  Side midpoint handles change its area freely; corner handles keep its area
+  within +/- 2 sqft of its value at the start of each drag and keep the opposite
+  corner fixed.
+- Corner resizing chooses the half-foot width/height pair nearest the cursor
+  within that area range. Snapping can still cause jumps between valid proportions.
 - Related names share a color family: `MasterBR.bath` and `MasterBR.closet`
   use a darker version of `MasterBR`'s color, even if created before the parent.
 - **Grid** toggles the one-foot grid. Above 150% zoom, dotted half-foot lines

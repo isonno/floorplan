@@ -75,8 +75,8 @@
       <p id="status" role="status" aria-live="polite">Load a background or draw your first space.</p>
       <p id="scale-info"></p>
       <p id="selection"></p>
-      <p>Drag inside a space to move it. Drag a side midpoint to resize. Drag a corner to change proportions while keeping its area.</p>
-      <p>All edges snap to 0.5 ft. Area-preserving corners jump between valid half-foot dimensions; some areas have few possible proportions.</p>
+      <p>Drag inside a space to move it. Drag a side midpoint to resize. Drag a corner to change proportions within 2 sqft of its area at the start of the drag.</p>
+      <p>All edges snap to 0.5 ft. Corners choose the nearest valid half-foot dimensions within that area range, keeping the opposite corner fixed.</p>
       <p>Use Set Scale to trace a known horizontal or vertical distance. Press Escape to cancel an action. Scroll to move around the plan.</p>
     </div>
     </div>
@@ -570,13 +570,16 @@
       }
       return null;
     }
-    function factors(room) {
+    function cornerDimensions(room) {
       const units = Math.round(room.width * 2) * Math.round(room.height * 2);
       const pairs = [];
-      for (let i = 1; i * i <= units; i++) {
-        if (units % i === 0) {
-          pairs.push({width: i / 2, height: units / i / 2});
-          if (i * i !== units) pairs.push({width: units / i / 2, height: i / 2});
+      // Half-foot dimensions make each area unit 0.25 sqft, so 2 sqft is 8 units.
+      for (let area = Math.max(1, units - 8); area <= units + 8; area++) {
+        for (let i = 1; i * i <= area; i++) {
+          if (area % i === 0) {
+            pairs.push({width: i / 2, height: area / i / 2});
+            if (i * i !== area) pairs.push({width: area / i / 2, height: i / 2});
+          }
         }
       }
       return pairs;
@@ -610,7 +613,7 @@
         if (!hit) return;
         const original = {...state.spaces[hit.index]};
         drag = {...hit, start: at, original, pointerId: event.pointerId};
-        if (hit.kind.length === 2 && hit.kind !== "move") drag.pairs = factors(original);
+        if (hit.kind.length === 2 && hit.kind !== "move") drag.pairs = cornerDimensions(original);
       }
       drawing.setPointerCapture(event.pointerId);
     });
@@ -723,7 +726,7 @@
         status("Scale updated. Existing spaces keep their dimensions in feet.");
       } else if (JSON.stringify(finished.original) !== JSON.stringify(state.spaces[finished.index])) {
         changed();
-        status(finished.pairs ? "Proportions updated; area preserved exactly." : "Space updated.");
+        status(finished.pairs ? "Proportions updated; area kept within 2 sqft of the drag's starting area." : "Space updated.");
       }
       render();
     });
