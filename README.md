@@ -3,6 +3,8 @@
 A dependency-free, local residential space planner. It models rooms as rounded
 rectangles, not construction details.
 
+This is a vibe-coded application; see [prompt.md](prompt.md) for the specification given to Copilot to create the app.
+
 ## Run
 
 Requires Python 3.9 or later and a current desktop browser. No Node.js, packages,
