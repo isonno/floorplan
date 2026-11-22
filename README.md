@@ -30,7 +30,8 @@ automatically; `--port 8000` selects a specific port.
   The initial scale is 20 image pixels per foot. Recalibration changes the
   image-to-feet relationship, not existing room dimensions.
 - **New Space:** enter a name, then drag opposite corners. Every edge snaps to
-  half-foot intervals. The workspace extends as rooms approach its bounds.
+  half-foot intervals. The current square footage appears in the center while
+  dragging. The workspace extends as rooms approach its bounds.
 - **Delete Space:** removes the selected space (the one showing drag handles).
   It is disabled when no space is selected. The total area updates immediately.
 - Drag inside a space to move it. Selecting a space reveals eight handles.

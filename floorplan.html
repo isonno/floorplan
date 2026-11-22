@@ -629,6 +629,12 @@
       if (drag.kind === "new") {
         const room = newRectangle(drag.start, at);
         preview.append(roomRect({...room, color: colorFor(mode.name)}, {"stroke-dasharray": "7 4"}));
+        preview.append(element("text", {
+          x: (room.x + room.width / 2) * state.pixelsPerFoot,
+          y: (room.y + room.height / 2) * state.pixelsPerFoot,
+          "text-anchor": "middle", "dominant-baseline": "middle", "font-size": 13, fill: "#111",
+          "paint-order": "stroke", stroke: "#ffffff", "stroke-width": 2, "stroke-opacity": 0.8
+        }, `${format(room.width * room.height)} sqft`));
         tooltip(event, dimensions(room));
         return;
       }

@@ -58,3 +58,5 @@ Second, if I resize the web page to make it wider, the width of the left panel s
 One more change: Add a line under the "Zoom" control that lists the "Total square feet: " and adds up the square footage of all spaces.
 ----
 Below the "New Space" button, add a "Delete Space" button. This deletes the active space (with drag controls visible) from the floorplan. If no space is active (no drag controls) then this control is disabled and grayed out.
+----
+Modify the app (in floorplan.html) so that as you are dragging out a new room, the current square footage of the room is displayed in the center.
